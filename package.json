@@ -1,48 +1,10 @@
 {
   "name": "ha-camera-viewer",
-  "version": "1.0.0",
-  "description": "Home Assistant Camera Viewer",
-  "main": "main.js",
+  "version": "2.0.0",
   "scripts": {
-    "start": "electron .",
-    "build": "electron-builder --win nsis --x64"
-  },
-  "build": {
-    "appId": "com.ha.cameraviewer",
-    "productName": "HA Camera Viewer",
-    "directories": {
-      "output": "dist"
-    },
-    "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }],
-      "icon": "assets/icon.ico",
-      "sign": null,
-      "signingHashAlgorithms": null
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "HA Camera Viewer"
-    },
-    "files": [
-      "main.js",
-      "preload.js",
-      "esphome-api.js",
-      "renderer/**",
-      "assets/**"
-    ]
-  },
-  "dependencies": {
-    "ws": "^8.16.0"
+    "build": "tauri build"
   },
   "devDependencies": {
-    "@electron/packager": "^20.0.2",
-    "electron": "^29.0.0",
-    "electron-builder": "^24.9.1"
-  },
-  "allowScripts": {
-    "electron@29.4.6": true
+    "@tauri-apps/cli": "^2"
   }
 }

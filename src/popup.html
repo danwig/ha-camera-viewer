@@ -18,9 +18,7 @@
     user-select: none;
   }
 
-  /* Drag region at the top */
   #titlebar {
-    -webkit-app-region: drag;
     height: 32px;
     background: #0d1117;
     display: flex;
@@ -28,15 +26,14 @@
     justify-content: space-between;
     padding: 0 12px;
     flex-shrink: 0;
+    cursor: default;
   }
   #titlebar .title {
     font-size: 12px;
     font-weight: 600;
     color: #64748b;
-    -webkit-app-region: drag;
   }
   #closeBtn {
-    -webkit-app-region: no-drag;
     background: none;
     border: none;
     color: #64748b;
@@ -52,7 +49,6 @@
   }
   #closeBtn:hover { background: #7f1d1d; color: #fca5a5; }
 
-  /* Camera feed */
   #cameraWrap {
     flex: 1;
     position: relative;
@@ -78,7 +74,6 @@
   }
   #errorMsg .icon { font-size: 32px; }
 
-  /* Timer bar */
   #timerBar {
     height: 4px;
     background: #1e2330;
@@ -92,9 +87,7 @@
     transition: width linear;
   }
 
-  /* Bottom controls */
   #controls {
-    -webkit-app-region: no-drag;
     background: #0d1117;
     padding: 8px 12px;
     display: flex;
@@ -122,8 +115,8 @@
 </head>
 <body>
 
-<div id="titlebar">
-  <span class="title" id="cameraLabel">HA Camera</span>
+<div id="titlebar" data-tauri-drag-region>
+  <span class="title" id="cameraLabel" data-tauri-drag-region>HA Camera</span>
   <button id="closeBtn" title="Close">✕</button>
 </div>
 
@@ -148,7 +141,6 @@
 <script>
   let timerInterval = null;
   let remaining = 0;
-  let totalTimeout = 0;
 
   const img = document.getElementById('cameraImg');
   const errorMsg = document.getElementById('errorMsg');
@@ -161,7 +153,6 @@
   function startCountdown(seconds) {
     clearInterval(timerInterval);
     remaining = seconds;
-    totalTimeout = seconds;
 
     if (seconds <= 0) {
       timerLabel.textContent = 'Staying open';
@@ -172,69 +163,55 @@
     timerBar.style.display = 'block';
     timerFill.style.transition = 'none';
     timerFill.style.width = '100%';
-
-    // Force reflow then animate
     timerFill.getBoundingClientRect();
     timerFill.style.transition = `width ${seconds}s linear`;
     timerFill.style.width = '0%';
 
     timerInterval = setInterval(() => {
       remaining--;
-      if (remaining <= 0) {
-        clearInterval(timerInterval);
-        timerLabel.textContent = 'Closing…';
-      } else {
-        timerLabel.textContent = `Closing in ${remaining}s`;
-      }
+      timerLabel.textContent = remaining > 0 ? `Closing in ${remaining}s` : 'Closing…';
+      if (remaining <= 0) clearInterval(timerInterval);
     }, 1000);
 
     timerLabel.textContent = `Closing in ${remaining}s`;
   }
 
   function loadCamera(url, entityId) {
-    cameraLabel.textContent = entityId.replace('camera.', '').replace(/_/g, ' ');
+    cameraLabel.textContent = (entityId || '').replace('camera.', '').replace(/_/g, ' ');
     errorMsg.style.display = 'none';
     img.style.display = 'block';
-    errorText.textContent = 'Connecting to camera…';
-
-    // Blank src first to abort any existing MJPEG stream connection
-    img.src = '';
-
-    img.onerror = () => {
-      img.style.display = 'none';
-      errorMsg.style.display = 'flex';
-      errorText.textContent = 'Camera unavailable';
-    };
-
-    img.onload = () => {
-      errorMsg.style.display = 'none';
-      img.style.display = 'block';
-    };
-
+    img.src = ''; // abort any existing MJPEG stream
+    img.onerror = () => { img.style.display='none'; errorMsg.style.display='flex'; errorText.textContent='Camera unavailable'; };
+    img.onload = () => { errorMsg.style.display='none'; img.style.display='block'; };
     img.src = url + '?t=' + Date.now();
   }
 
-  window.ha.onShowCamera(({ cameraUrl, cameraEntityId, timeout, showBar }) => {
+  // Tauri event listeners
+  const { invoke } = window.__TAURI__.core;
+  const { listen } = window.__TAURI__.event;
+
+  listen('show-camera', ({ payload }) => {
+    const { cameraUrl, cameraEntityId, timeout, showBar } = payload;
     loadCamera(cameraUrl, cameraEntityId);
     timerBar.style.display = showBar ? 'block' : 'none';
     startCountdown(timeout);
   });
 
-  window.ha.onTimerExtended((seconds) => {
+  listen('timer-extended', ({ payload: seconds }) => {
     startCountdown(seconds);
   });
 
-  document.getElementById('closeBtn').addEventListener('click', () => window.ha.closePopup());
+  document.getElementById('closeBtn').addEventListener('click', () => invoke('close_popup'));
 
   document.getElementById('extendBtn').addEventListener('click', () => {
     const newTime = remaining + 30;
-    window.ha.extendTimer(newTime);
+    invoke('extend_timer', { seconds: newTime });
     startCountdown(newTime);
   });
 
   document.getElementById('noTimerBtn').addEventListener('click', () => {
     clearInterval(timerInterval);
-    window.ha.extendTimer(0);
+    invoke('extend_timer', { seconds: 0 });
     timerLabel.textContent = 'Staying open';
     timerBar.style.display = 'none';
   });
