@@ -2,7 +2,9 @@
 
 A Windows system tray app that connects to Home Assistant and displays camera feeds in a popup window, triggered by HA automations.
 
-Built with Electron. No MQTT or manual helpers needed — it simulates an ESPHome device so HA discovers it natively.
+Built with **Tauri** — uses the Windows WebView2 runtime (pre-installed on Windows 10/11) instead of bundling a browser. Installer is under 4 MB.
+
+No MQTT or manual helpers needed — it simulates an ESPHome device so HA discovers it natively.
 
 ---
 
@@ -11,11 +13,11 @@ Built with Electron. No MQTT or manual helpers needed — it simulates an ESPHom
 - Runs in the Windows system tray
 - Pop-up camera viewer in the bottom-right corner of your screen
 - Shows any HA camera entity (MJPEG stream)
-- Multiple cameras — each appears as its own toggle in HA
-- Triggered from HA automations (turn on a switch entity to show a camera)
+- Multiple cameras — each appears as its own switch in HA
+- Triggered from HA automations (turn a switch on to show a camera, off to hide)
 - Auto-close timer with progress bar, +30s / Keep Open buttons
-- Adjustable window size
-- Works over local network and remotely via Nabu Casa
+- Adjustable window size and position
+- Start with Windows option
 
 ---
 
@@ -54,15 +56,16 @@ Turn a camera switch ON to show it, OFF to hide the popup:
     entity_id: switch.driveway
 ```
 
-Switch cameras by turning one on — the previous one turns off and the feed updates automatically.
+Switch cameras by turning one on — the previous one turns off automatically.
 
 ---
 
 ## Firewall
 
-On first run Windows may ask to allow network access. Click **Allow** so HA can reach the ESPHome API on port 6053.
+On first run Windows may prompt to allow network access. Click **Allow** so HA can reach the ESPHome API on port 6053.
 
-If HA can't connect, run this in PowerShell (as admin):
+If HA can't connect, run this in PowerShell (as Administrator):
+
 ```powershell
 New-NetFirewallRule -DisplayName "HA Camera Viewer ESPHome API" -Direction Inbound -Protocol TCP -LocalPort 6053 -Action Allow -Profile Any
 ```
@@ -71,29 +74,32 @@ New-NetFirewallRule -DisplayName "HA Camera Viewer ESPHome API" -Direction Inbou
 
 ## How it works
 
-- **Electron** app running as a tray process
-- Implements the **ESPHome native API** (TCP port 6053) so HA discovers it as a real ESPHome device with no manual helper setup
+- **Tauri** app running as a tray process (~3 MB installer, no bundled browser)
+- Implements the **ESPHome native API** (TCP port 6053) — HA discovers it as a real ESPHome device with no manual helper setup
 - A local HTTP proxy adds the HA Bearer token to camera stream requests (MJPEG)
-- Connects to HA via WebSocket for auth and future state sync
+- Connects to HA via WebSocket for auth
 - Settings stored in `%APPDATA%\ha-camera-viewer\config.json`
 
 ---
 
 ## Building from source
 
+Requires [Rust](https://rustup.rs/) and [Node.js](https://nodejs.org/).
+
 ```bash
 npm install
-npm start          # run in dev mode
-npm run build      # build NSIS installer (requires running as Administrator on Windows)
+npm run build
+# Installer appears in: src-tauri/target/release/bundle/nsis/
 ```
 
-> **Note:** The build must run as Administrator on Windows to allow electron-builder to create the symlinks it needs for the winCodeSign toolchain.
+> Windows 10/11 includes WebView2 by default. No extra runtime download needed.
 
 ---
 
 ## Tech stack
 
-- [Electron](https://www.electronjs.org/) v29
-- [ws](https://github.com/websockets/ws) — HA WebSocket connection
-- ESPHome native API — implemented from scratch (see `esphome-api.js`)
-- Node.js built-in `net`, `http`, `https` — TCP server + camera proxy
+- [Tauri](https://tauri.app/) v2 — app framework (Rust backend + WebView2 frontend)
+- [Tokio](https://tokio.rs/) — async Rust runtime
+- [Axum](https://github.com/tokio-rs/axum) — local HTTP proxy for camera streams
+- [tokio-tungstenite](https://github.com/snapview/tokio-tungstenite) — HA WebSocket connection
+- ESPHome native API — implemented from scratch in Rust (see `src-tauri/src/esphome.rs`)

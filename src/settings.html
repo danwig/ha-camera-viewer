@@ -69,8 +69,6 @@
     transition: transform 0.25s; pointer-events: none;
   }
   .toast.show { transform: translateX(-50%) translateY(0); }
-
-  /* Camera list */
   .camera-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
   .camera-row {
     display: flex; align-items: center; gap: 8px;
@@ -80,10 +78,6 @@
   .camera-row input { margin: 0; }
   .camera-row input:first-child { flex: 0 0 140px; }
   .camera-row input:last-of-type { flex: 1; }
-  .camera-row .drag-handle {
-    color: #475569; cursor: grab; font-size: 16px; user-select: none; padding: 0 2px;
-  }
-
   .info-box {
     background: #1e2330; border: 1px solid #2d3348; border-radius: 8px;
     padding: 12px; font-size: 12px; color: #64748b; line-height: 1.7;
@@ -104,7 +98,7 @@
   <div class="section-title">Home Assistant Connection</div>
   <div class="field">
     <label>HA URL</label>
-    <input type="text" id="haUrl" placeholder="http://192.168.6.87:8123 or https://xxx.ui.nabu.casa"/>
+    <input type="text" id="haUrl" placeholder="http://192.168.1.100:8123 or https://xxx.ui.nabu.casa"/>
   </div>
   <div class="field">
     <label>Long-Lived Access Token</label>
@@ -118,7 +112,7 @@
 <div class="section">
   <div class="section-title">Cameras</div>
   <div class="hint" style="margin-bottom:10px">
-    Add each camera below. The <b>Name</b> is what appears in Home Assistant (the Select entity).
+    Add each camera below. The <b>Name</b> appears as a switch in Home Assistant.
     The <b>Entity ID</b> is your HA camera entity.
   </div>
   <div style="display:flex; gap:8px; font-size:11px; font-weight:600; color:#475569; padding:0 10px; margin-bottom:4px;">
@@ -137,7 +131,7 @@
   <div class="field">
     <label>API Port</label>
     <input type="number" id="espPort" min="1024" max="65535" value="6053" style="width:120px"/>
-    <div class="hint">Port HA connects to. Default 6053. Add the device in HA → Settings → Devices & Services → Add → ESPHome → enter this PC's IP address.</div>
+    <div class="hint">Port HA connects to. Default 6053. Add in HA → Settings → Devices & Services → Add → ESPHome → enter this PC's IP.</div>
   </div>
 </div>
 
@@ -203,22 +197,25 @@
   <div class="info-box">
     After saving, go to <b>HA → Settings → Devices & Services → Add Integration → ESPHome</b><br/>
     Enter this PC's local IP address and port <span id="portHint">6053</span>.<br/><br/>
-    Once added, HA exposes two entities:<br/>
-    • <code>switch.camera_viewer</code> — turn ON to show, OFF to hide<br/>
-    • <code>select.camera_viewer_camera</code> — pick which camera<br/><br/>
-    In an automation: set the Select entity first, then turn the Switch ON.
+    HA exposes one switch per camera — turn a switch ON to show it, OFF to hide.<br/>
+    In an automation: <code>switch.turn_on</code> with your camera's switch entity.
   </div>
 </div>
 
 <div class="btn-row">
-  <button class="btn btn-secondary" onclick="window.close()">Cancel</button>
+  <button class="btn btn-secondary" id="cancelBtn">Cancel</button>
   <button class="btn btn-primary" id="saveBtn">Save Settings</button>
 </div>
 
 <div class="toast" id="toast">Settings saved</div>
 
 <script>
+  const { invoke } = window.__TAURI__.core;
   const list = document.getElementById('cameraList');
+
+  function escHtml(s) {
+    return (s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+  }
 
   function makeCameraRow(name = '', entityId = '') {
     const row = document.createElement('div');
@@ -229,10 +226,6 @@
       <button class="btn btn-danger" onclick="this.closest('.camera-row').remove()">Remove</button>
     `;
     return row;
-  }
-
-  function escHtml(s) {
-    return (s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
   }
 
   function getCameras() {
@@ -251,7 +244,7 @@
   const checkboxes = ['startWithWindows','alwaysOnTop','showTimerBar'];
 
   async function load() {
-    const cfg = await window.ha.getConfig();
+    const cfg = await invoke('get_config');
     simpleFields.forEach(k => {
       const el = document.getElementById(k);
       if (el) el.value = cfg[k] ?? '';
@@ -280,11 +273,13 @@
       const el = document.getElementById(k);
       if (el) updates[k] = el.checked;
     });
-    await window.ha.saveConfig(updates);
+    await invoke('save_config', { config: updates });
     const t = document.getElementById('toast');
     t.classList.add('show');
     setTimeout(() => t.classList.remove('show'), 2500);
   });
+
+  document.getElementById('cancelBtn').addEventListener('click', () => window.close());
 
   load();
 </script>

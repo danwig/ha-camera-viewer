@@ -1,5 +1,3 @@
 node_modules/
-dist/
-*.blockmap
-builder-debug.yml
-builder-effective-config.yaml
+src-tauri/target/
+src-tauri/gen/
