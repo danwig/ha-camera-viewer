@@ -267,7 +267,7 @@ async fn handle_message(
             let resp: Vec<u8> = [
                 pb_varint_field(2, 1),
                 pb_varint_field(3, 10),
-                pb_str(4, "ha-camera-viewer 2.0.0"),
+                pb_str(4, "ha-camera-viewer 1.0.0"),
                 pb_str(5, "HA Camera Viewer"),
             ].concat();
             let _ = stream.write_all(&encode_frame(T_HELLO_RESPONSE, &resp)).await;

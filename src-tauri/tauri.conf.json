@@ -1,12 +1,13 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "HA Camera Viewer",
-  "version": "2.0.0",
+  "version": "1.0.0",
   "identifier": "com.ha.cameraviewer",
   "build": {
     "frontendDist": "../src"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [],
     "security": {
       "csp": null

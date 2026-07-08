@@ -23,7 +23,6 @@ struct AppState {
     active_camera_idx: Arc<std::sync::Mutex<i32>>,
     broadcast_tx: broadcast::Sender<()>,
     close_timer: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
-    // Handles for restarting background tasks
     esphome_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     ha_ws_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
 }
@@ -51,34 +50,31 @@ fn build_tray(app: &tauri::App, cameras: &[config::Camera]) -> tauri::Result<()>
         .icon(app.default_window_icon().unwrap().clone())
         .tooltip("HA Camera Viewer")
         .menu(&menu)
-        .on_menu_event({
-            let cameras: Vec<config::Camera> = cameras.to_vec();
-            move |app, event| {
-                let id = event.id().as_ref();
-                match id {
-                    "settings" => open_settings(app),
-                    "quit" => app.exit(0),
-                    s if s.starts_with("camera_") => {
-                        if let Ok(idx) = s["camera_".len()..].parse::<usize>() {
-                            if let Some(cam) = cameras.get(idx) {
+        // NOTE: do NOT capture cameras here — always read from AppState at click time
+        .on_menu_event(move |app, event| {
+            let id = event.id().as_ref().to_string();
+            match id.as_str() {
+                "settings" => open_settings(app),
+                "quit" => app.exit(0),
+                s if s.starts_with("camera_") => {
+                    if let Ok(idx) = s["camera_".len()..].parse::<usize>() {
+                        let app = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let state: tauri::State<'_, AppState> = app.state();
+                            let config = state.config.lock().await.clone();
+                            if let Some(cam) = config.cameras.get(idx) {
                                 let cam = cam.clone();
-                                let app = app.clone();
-                                tauri::async_runtime::spawn(async move {
-                                    let state: tauri::State<'_, AppState> = app.state();
-                                    let config = state.config.lock().await.clone();
-                                    let proxy_port = *state.proxy_port.lock().unwrap();
-                                    let timeout = config.manual_timeout;
-                                    let idx_i32 = idx as i32;
-                                    *state.active_camera_idx.lock().unwrap() = idx_i32;
-                                    let _ = state.broadcast_tx.send(());
-                                    esphome::do_show_camera(&app, &cam, &config, proxy_port).await;
-                                    start_close_timer(&app, timeout).await;
-                                });
+                                let proxy_port = *state.proxy_port.lock().unwrap();
+                                let timeout = config.manual_timeout;
+                                *state.active_camera_idx.lock().unwrap() = idx as i32;
+                                let _ = state.broadcast_tx.send(());
+                                esphome::do_show_camera(&app, &cam, &config, proxy_port).await;
+                                start_close_timer(&app, timeout).await;
                             }
-                        }
+                        });
                     }
-                    _ => {}
                 }
+                _ => {}
             }
         })
         .build(app)?;
@@ -103,7 +99,9 @@ fn build_tray_menu(
         items.push(item);
     }
 
-    let no_cameras = MenuItem::with_id(app, "no_cameras", "No cameras configured", false, None::<&str>)?;
+    let no_cameras = MenuItem::with_id(
+        app, "no_cameras", "No cameras configured", false, None::<&str>,
+    )?;
     if cameras.is_empty() {
         items.push(&no_cameras);
     }
@@ -136,23 +134,33 @@ fn open_settings(app: &tauri::AppHandle) {
         let _ = w.set_focus();
         return;
     }
-    match WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
-        .title("HA Camera Viewer — Settings")
-        .inner_size(560.0, 720.0)
-        .resizable(false)
-        .build()
+    if let Err(e) = WebviewWindowBuilder::new(
+        app, "settings", WebviewUrl::App("settings.html".into()),
+    )
+    .title("HA Camera Viewer — Settings")
+    .inner_size(560.0, 720.0)
+    .resizable(false)
+    .build()
     {
-        Ok(_) => {}
-        Err(e) => eprintln!("settings window error: {}", e),
+        eprintln!("settings window error: {}", e);
     }
+}
+
+fn create_popup_window(app: &tauri::AppHandle, cfg: &config::Config) {
+    if app.get_webview_window("popup").is_some() { return; }
+    let _ = WebviewWindowBuilder::new(app, "popup", WebviewUrl::App("popup.html".into()))
+        .decorations(false)
+        .always_on_top(cfg.always_on_top)
+        .skip_taskbar(true)
+        .inner_size(cfg.width as f64, cfg.height as f64)
+        .visible(false)
+        .build();
 }
 
 async fn start_close_timer(app: &tauri::AppHandle, timeout_secs: u32) {
     let state: tauri::State<'_, AppState> = app.state();
     let mut timer = state.close_timer.lock().await;
-    if let Some(h) = timer.take() {
-        h.abort();
-    }
+    if let Some(h) = timer.take() { h.abort(); }
     if timeout_secs > 0 {
         let app = app.clone();
         *timer = Some(tokio::spawn(async move {
@@ -227,7 +235,6 @@ async fn save_config(
     state: tauri::State<'_, AppState>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
-    // Handle startWithWindows (not part of Config struct)
     if let Some(start) = config["startWithWindows"].as_bool() {
         use tauri_plugin_autostart::ManagerExt;
         let mgr = app.autolaunch();
@@ -235,7 +242,6 @@ async fn save_config(
         else { mgr.disable().map_err(|e| e.to_string())?; }
     }
 
-    // Parse and save Config (unknown fields like startWithWindows are ignored)
     let new_config: config::Config = serde_json::from_value(config).map_err(|e| e.to_string())?;
     {
         let mut cfg = state.config.lock().await;
@@ -243,8 +249,16 @@ async fn save_config(
     }
     config::save(&new_config)?;
 
-    // Rebuild tray and restart services
     rebuild_tray_menu(&app, &new_config.cameras);
+
+    // Re-create popup with updated size/settings if it exists
+    if let Some(w) = app.get_webview_window("popup") {
+        let _ = w.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(
+            new_config.width, new_config.height,
+        )));
+        let _ = w.set_always_on_top(new_config.always_on_top);
+    }
+
     restart_services(&app, &state).await;
 
     Ok(())
@@ -306,6 +320,9 @@ fn main() {
                 let port = proxy::start(config_arc).await;
                 *proxy_port_arc.lock().unwrap() = port;
             });
+
+            // Pre-create the popup window hidden so it's ready before first camera trigger
+            create_popup_window(app.handle(), &cfg);
 
             // Build tray
             build_tray(app, &cfg.cameras)?;

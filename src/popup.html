@@ -187,6 +187,11 @@
   }
 
   // Tauri event listeners
+  if (!window.__TAURI__) {
+    document.getElementById('errorText').textContent = 'Tauri API not available';
+    document.getElementById('errorMsg').style.display = 'flex';
+    throw new Error('window.__TAURI__ is undefined');
+  }
   const { invoke } = window.__TAURI__.core;
   const { listen } = window.__TAURI__.event;
 
