@@ -280,8 +280,15 @@ function createTray() {
 
 // ---- IPC ----
 
-ipcMain.handle('get-config', () => config);
+ipcMain.handle('get-config', () => ({
+  ...config,
+  startWithWindows: app.getLoginItemSettings().openAtLogin,
+}));
 ipcMain.handle('save-config', (_, updates) => {
+  if (typeof updates.startWithWindows === 'boolean') {
+    app.setLoginItemSettings({ openAtLogin: updates.startWithWindows });
+    delete updates.startWithWindows;
+  }
   saveConfig(updates);
   connectHA();
   startESPHome();

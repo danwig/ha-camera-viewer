@@ -157,6 +157,13 @@
   </div>
   <div class="toggle-row">
     <div>
+      <div class="toggle-label">Start with Windows</div>
+      <div class="toggle-sub">Launch automatically at login</div>
+    </div>
+    <label class="toggle"><input type="checkbox" id="startWithWindows"/><span class="slider"></span></label>
+  </div>
+  <div class="toggle-row">
+    <div>
       <div class="toggle-label">Always on top</div>
       <div class="toggle-sub">Window stays above other apps</div>
     </div>
@@ -241,7 +248,7 @@
   });
 
   const simpleFields = ['haUrl','haToken','width','height','timeout','manualTimeout','espPort'];
-  const checkboxes = ['alwaysOnTop','showTimerBar'];
+  const checkboxes = ['startWithWindows','alwaysOnTop','showTimerBar'];
 
   async function load() {
     const cfg = await window.ha.getConfig();
