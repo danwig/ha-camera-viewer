@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Settings</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #111318;
+    color: #e2e8f0;
+    font-size: 14px;
+    padding: 24px;
+    overflow-y: auto;
+  }
+  h1 { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+  .sub { color: #64748b; font-size: 12px; margin-bottom: 24px; }
+  .section { margin-bottom: 20px; }
+  .section-title {
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .08em; color: #64748b; margin-bottom: 12px;
+  }
+  .field { margin-bottom: 12px; }
+  label { display: block; font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 5px; }
+  input[type="text"], input[type="password"], input[type="number"] {
+    width: 100%; background: #1e2330; border: 1px solid #2d3348;
+    border-radius: 7px; padding: 8px 12px; color: #e2e8f0;
+    font-size: 13px; outline: none; transition: border 0.15s;
+  }
+  input:focus { border-color: #2563eb; }
+  .row { display: flex; gap: 12px; }
+  .row .field { flex: 1; }
+  .hint { font-size: 11px; color: #475569; margin-top: 4px; }
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; }
+  .toggle-label { font-size: 13px; }
+  .toggle-sub { font-size: 11px; color: #64748b; margin-top: 2px; }
+  .toggle { position: relative; width: 40px; height: 22px; flex-shrink: 0; }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .slider {
+    position: absolute; inset: 0; background: #2d3348;
+    border-radius: 99px; cursor: pointer; transition: background 0.2s;
+  }
+  .slider:before {
+    content: ''; position: absolute; width: 16px; height: 16px;
+    left: 3px; top: 3px; background: #94a3b8; border-radius: 50%;
+    transition: transform 0.2s, background 0.2s;
+  }
+  input:checked + .slider { background: #2563eb; }
+  input:checked + .slider:before { transform: translateX(18px); background: #fff; }
+  .divider { border: none; border-top: 1px solid #2d3348; margin: 18px 0; }
+  .btn-row { display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px; }
+  .btn {
+    padding: 9px 20px; border-radius: 8px; font-size: 13px;
+    font-weight: 600; cursor: pointer; border: none; transition: background 0.15s;
+  }
+  .btn-primary { background: #2563eb; color: #fff; }
+  .btn-primary:hover { background: #1d4ed8; }
+  .btn-secondary { background: #1e2330; border: 1px solid #2d3348; color: #e2e8f0; }
+  .btn-secondary:hover { background: #2d3348; }
+  .btn-danger { background: transparent; border: 1px solid #7f1d1d; color: #f87171; padding: 5px 10px; font-size: 12px; }
+  .btn-danger:hover { background: #7f1d1d30; }
+  .btn-sm { padding: 6px 14px; font-size: 12px; }
+  .toast {
+    position: fixed; bottom: 16px; left: 50%;
+    transform: translateX(-50%) translateY(60px);
+    background: #14532d; color: #4ade80; padding: 8px 20px;
+    border-radius: 8px; font-size: 13px; font-weight: 600;
+    transition: transform 0.25s; pointer-events: none;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+
+  /* Camera list */
+  .camera-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+  .camera-row {
+    display: flex; align-items: center; gap: 8px;
+    background: #1e2330; border: 1px solid #2d3348;
+    border-radius: 8px; padding: 8px 10px;
+  }
+  .camera-row input { margin: 0; }
+  .camera-row input:first-child { flex: 0 0 140px; }
+  .camera-row input:last-of-type { flex: 1; }
+  .camera-row .drag-handle {
+    color: #475569; cursor: grab; font-size: 16px; user-select: none; padding: 0 2px;
+  }
+
+  .info-box {
+    background: #1e2330; border: 1px solid #2d3348; border-radius: 8px;
+    padding: 12px; font-size: 12px; color: #64748b; line-height: 1.7;
+  }
+  .info-box code {
+    background: #0d1117; padding: 1px 5px; border-radius: 4px;
+    color: #93c5fd; font-size: 11px;
+  }
+  .info-box b { color: #94a3b8; }
+</style>
+</head>
+<body>
+
+<h1>HA Camera Viewer</h1>
+<p class="sub">Settings are saved to AppData and applied immediately</p>
+
+<div class="section">
+  <div class="section-title">Home Assistant Connection</div>
+  <div class="field">
+    <label>HA URL</label>
+    <input type="text" id="haUrl" placeholder="http://192.168.6.87:8123 or https://xxx.ui.nabu.casa"/>
+  </div>
+  <div class="field">
+    <label>Long-Lived Access Token</label>
+    <input type="password" id="haToken" placeholder="Paste your HA token here"/>
+    <div class="hint">HA → Profile → Long-Lived Access Tokens → Create Token</div>
+  </div>
+</div>
+
+<hr class="divider"/>
+
+<div class="section">
+  <div class="section-title">Cameras</div>
+  <div class="hint" style="margin-bottom:10px">
+    Add each camera below. The <b>Name</b> is what appears in Home Assistant (the Select entity).
+    The <b>Entity ID</b> is your HA camera entity.
+  </div>
+  <div style="display:flex; gap:8px; font-size:11px; font-weight:600; color:#475569; padding:0 10px; margin-bottom:4px;">
+    <span style="flex:0 0 140px">Name (shown in HA)</span>
+    <span style="flex:1">Camera Entity ID</span>
+    <span style="width:60px"></span>
+  </div>
+  <div class="camera-list" id="cameraList"></div>
+  <button class="btn btn-secondary btn-sm" id="addCameraBtn">+ Add Camera</button>
+</div>
+
+<hr class="divider"/>
+
+<div class="section">
+  <div class="section-title">ESPHome Device</div>
+  <div class="field">
+    <label>API Port</label>
+    <input type="number" id="espPort" min="1024" max="65535" value="6053" style="width:120px"/>
+    <div class="hint">Port HA connects to. Default 6053. Add the device in HA → Settings → Devices & Services → Add → ESPHome → enter this PC's IP address.</div>
+  </div>
+</div>
+
+<hr class="divider"/>
+
+<div class="section">
+  <div class="section-title">Window</div>
+  <div class="row">
+    <div class="field">
+      <label>Width (px)</label>
+      <input type="number" id="width" min="320" max="1920" step="10"/>
+    </div>
+    <div class="field">
+      <label>Height (px)</label>
+      <input type="number" id="height" min="240" max="1080" step="10"/>
+    </div>
+  </div>
+  <div class="toggle-row">
+    <div>
+      <div class="toggle-label">Always on top</div>
+      <div class="toggle-sub">Window stays above other apps</div>
+    </div>
+    <label class="toggle"><input type="checkbox" id="alwaysOnTop"/><span class="slider"></span></label>
+  </div>
+  <div class="toggle-row">
+    <div>
+      <div class="toggle-label">Show timer bar</div>
+      <div class="toggle-sub">Blue progress bar showing time remaining</div>
+    </div>
+    <label class="toggle"><input type="checkbox" id="showTimerBar"/><span class="slider"></span></label>
+  </div>
+</div>
+
+<hr class="divider"/>
+
+<div class="section">
+  <div class="section-title">Auto-Close</div>
+  <div class="row">
+    <div class="field">
+      <label>HA trigger timeout (sec)</label>
+      <input type="number" id="timeout" min="0" max="600" step="5"/>
+      <div class="hint">0 = stays open</div>
+    </div>
+    <div class="field">
+      <label>Manual open timeout (sec)</label>
+      <input type="number" id="manualTimeout" min="0" max="600" step="5"/>
+      <div class="hint">0 = stays open</div>
+    </div>
+  </div>
+</div>
+
+<hr class="divider"/>
+
+<div class="section">
+  <div class="section-title">How to use from HA</div>
+  <div class="info-box">
+    After saving, go to <b>HA → Settings → Devices & Services → Add Integration → ESPHome</b><br/>
+    Enter this PC's local IP address and port <span id="portHint">6053</span>.<br/><br/>
+    Once added, HA exposes two entities:<br/>
+    • <code>switch.camera_viewer</code> — turn ON to show, OFF to hide<br/>
+    • <code>select.camera_viewer_camera</code> — pick which camera<br/><br/>
+    In an automation: set the Select entity first, then turn the Switch ON.
+  </div>
+</div>
+
+<div class="btn-row">
+  <button class="btn btn-secondary" onclick="window.close()">Cancel</button>
+  <button class="btn btn-primary" id="saveBtn">Save Settings</button>
+</div>
+
+<div class="toast" id="toast">Settings saved</div>
+
+<script>
+  const list = document.getElementById('cameraList');
+
+  function makeCameraRow(name = '', entityId = '') {
+    const row = document.createElement('div');
+    row.className = 'camera-row';
+    row.innerHTML = `
+      <input type="text" placeholder="Driveway" value="${escHtml(name)}" class="cam-name"/>
+      <input type="text" placeholder="camera.driveway_sd_stream" value="${escHtml(entityId)}" class="cam-entity"/>
+      <button class="btn btn-danger" onclick="this.closest('.camera-row').remove()">Remove</button>
+    `;
+    return row;
+  }
+
+  function escHtml(s) {
+    return (s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+  }
+
+  function getCameras() {
+    return [...list.querySelectorAll('.camera-row')].map(row => ({
+      name: row.querySelector('.cam-name').value.trim(),
+      entityId: row.querySelector('.cam-entity').value.trim()
+    })).filter(c => c.name || c.entityId);
+  }
+
+  document.getElementById('addCameraBtn').addEventListener('click', () => {
+    list.appendChild(makeCameraRow());
+    list.lastElementChild.querySelector('.cam-name').focus();
+  });
+
+  const simpleFields = ['haUrl','haToken','width','height','timeout','manualTimeout','espPort'];
+  const checkboxes = ['alwaysOnTop','showTimerBar'];
+
+  async function load() {
+    const cfg = await window.ha.getConfig();
+    simpleFields.forEach(k => {
+      const el = document.getElementById(k);
+      if (el) el.value = cfg[k] ?? '';
+    });
+    checkboxes.forEach(k => {
+      const el = document.getElementById(k);
+      if (el) el.checked = !!cfg[k];
+    });
+    const cameras = Array.isArray(cfg.cameras) ? cfg.cameras : [];
+    cameras.forEach(c => list.appendChild(makeCameraRow(c.name, c.entityId)));
+    document.getElementById('portHint').textContent = cfg.espPort || 6053;
+  }
+
+  document.getElementById('espPort').addEventListener('input', e => {
+    document.getElementById('portHint').textContent = e.target.value || 6053;
+  });
+
+  document.getElementById('saveBtn').addEventListener('click', async () => {
+    const updates = { cameras: getCameras() };
+    simpleFields.forEach(k => {
+      const el = document.getElementById(k);
+      if (!el) return;
+      updates[k] = el.type === 'number' ? Number(el.value) : el.value;
+    });
+    checkboxes.forEach(k => {
+      const el = document.getElementById(k);
+      if (el) updates[k] = el.checked;
+    });
+    await window.ha.saveConfig(updates);
+    const t = document.getElementById('toast');
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2500);
+  });
+
+  load();
+</script>
+</body>
+</html>

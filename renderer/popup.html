@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Camera</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #111318;
+    color: #e2e8f0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    user-select: none;
+  }
+
+  /* Drag region at the top */
+  #titlebar {
+    -webkit-app-region: drag;
+    height: 32px;
+    background: #0d1117;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 12px;
+    flex-shrink: 0;
+  }
+  #titlebar .title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #64748b;
+    -webkit-app-region: drag;
+  }
+  #closeBtn {
+    -webkit-app-region: no-drag;
+    background: none;
+    border: none;
+    color: #64748b;
+    cursor: pointer;
+    font-size: 16px;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: background 0.15s, color 0.15s;
+  }
+  #closeBtn:hover { background: #7f1d1d; color: #fca5a5; }
+
+  /* Camera feed */
+  #cameraWrap {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background: #000;
+  }
+  #cameraImg {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+  #errorMsg {
+    display: none;
+    position: absolute;
+    inset: 0;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 8px;
+    color: #64748b;
+    font-size: 13px;
+  }
+  #errorMsg .icon { font-size: 32px; }
+
+  /* Timer bar */
+  #timerBar {
+    height: 4px;
+    background: #1e2330;
+    flex-shrink: 0;
+    display: none;
+  }
+  #timerFill {
+    height: 100%;
+    background: #2563eb;
+    width: 100%;
+    transition: width linear;
+  }
+
+  /* Bottom controls */
+  #controls {
+    -webkit-app-region: no-drag;
+    background: #0d1117;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+  #timerLabel {
+    font-size: 11px;
+    color: #64748b;
+    min-width: 80px;
+  }
+  .btn {
+    background: #1e2330;
+    border: 1px solid #2d3348;
+    color: #e2e8f0;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .btn:hover { background: #2d3348; }
+</style>
+</head>
+<body>
+
+<div id="titlebar">
+  <span class="title" id="cameraLabel">HA Camera</span>
+  <button id="closeBtn" title="Close">✕</button>
+</div>
+
+<div id="cameraWrap">
+  <img id="cameraImg" alt=""/>
+  <div id="errorMsg">
+    <span class="icon">📷</span>
+    <span id="errorText">Connecting to camera…</span>
+  </div>
+</div>
+
+<div id="timerBar"><div id="timerFill"></div></div>
+
+<div id="controls">
+  <span id="timerLabel">–</span>
+  <div style="display:flex;gap:6px">
+    <button class="btn" id="extendBtn">+30s</button>
+    <button class="btn" id="noTimerBtn">Keep open</button>
+  </div>
+</div>
+
+<script>
+  let timerInterval = null;
+  let remaining = 0;
+  let totalTimeout = 0;
+
+  const img = document.getElementById('cameraImg');
+  const errorMsg = document.getElementById('errorMsg');
+  const errorText = document.getElementById('errorText');
+  const timerLabel = document.getElementById('timerLabel');
+  const timerBar = document.getElementById('timerBar');
+  const timerFill = document.getElementById('timerFill');
+  const cameraLabel = document.getElementById('cameraLabel');
+
+  function startCountdown(seconds) {
+    clearInterval(timerInterval);
+    remaining = seconds;
+    totalTimeout = seconds;
+
+    if (seconds <= 0) {
+      timerLabel.textContent = 'Staying open';
+      timerBar.style.display = 'none';
+      return;
+    }
+
+    timerBar.style.display = 'block';
+    timerFill.style.transition = 'none';
+    timerFill.style.width = '100%';
+
+    // Force reflow then animate
+    timerFill.getBoundingClientRect();
+    timerFill.style.transition = `width ${seconds}s linear`;
+    timerFill.style.width = '0%';
+
+    timerInterval = setInterval(() => {
+      remaining--;
+      if (remaining <= 0) {
+        clearInterval(timerInterval);
+        timerLabel.textContent = 'Closing…';
+      } else {
+        timerLabel.textContent = `Closing in ${remaining}s`;
+      }
+    }, 1000);
+
+    timerLabel.textContent = `Closing in ${remaining}s`;
+  }
+
+  function loadCamera(url, entityId) {
+    cameraLabel.textContent = entityId.replace('camera.', '').replace(/_/g, ' ');
+    errorMsg.style.display = 'none';
+    img.style.display = 'block';
+    errorText.textContent = 'Connecting to camera…';
+
+    // Blank src first to abort any existing MJPEG stream connection
+    img.src = '';
+
+    img.onerror = () => {
+      img.style.display = 'none';
+      errorMsg.style.display = 'flex';
+      errorText.textContent = 'Camera unavailable';
+    };
+
+    img.onload = () => {
+      errorMsg.style.display = 'none';
+      img.style.display = 'block';
+    };
+
+    img.src = url + '?t=' + Date.now();
+  }
+
+  window.ha.onShowCamera(({ cameraUrl, cameraEntityId, timeout, showBar }) => {
+    loadCamera(cameraUrl, cameraEntityId);
+    timerBar.style.display = showBar ? 'block' : 'none';
+    startCountdown(timeout);
+  });
+
+  window.ha.onTimerExtended((seconds) => {
+    startCountdown(seconds);
+  });
+
+  document.getElementById('closeBtn').addEventListener('click', () => window.ha.closePopup());
+
+  document.getElementById('extendBtn').addEventListener('click', () => {
+    const newTime = remaining + 30;
+    window.ha.extendTimer(newTime);
+    startCountdown(newTime);
+  });
+
+  document.getElementById('noTimerBtn').addEventListener('click', () => {
+    clearInterval(timerInterval);
+    window.ha.extendTimer(0);
+    timerLabel.textContent = 'Staying open';
+    timerBar.style.display = 'none';
+  });
+</script>
+</body>
+</html>
