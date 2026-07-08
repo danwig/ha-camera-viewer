@@ -210,6 +210,10 @@
 <div class="toast" id="toast">Settings saved</div>
 
 <script>
+  if (!window.__TAURI__) {
+    document.body.innerHTML = '<p style="color:#f87171;padding:24px">Tauri API not available — please relaunch the app.</p>';
+    throw new Error('window.__TAURI__ is undefined');
+  }
   const { invoke } = window.__TAURI__.core;
   const list = document.getElementById('cameraList');
 
