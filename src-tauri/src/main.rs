@@ -271,11 +271,19 @@ async fn save_config(
 
 #[tauri::command]
 async fn close_popup(state: tauri::State<'_, AppState>, app: tauri::AppHandle) -> Result<(), ()> {
-    let mut timer = state.close_timer.lock().await;
-    if let Some(h) = timer.take() { h.abort(); }
+    {
+        let mut timer = state.close_timer.lock().await;
+        if let Some(h) = timer.take() { h.abort(); }
+    }
     *state.active_camera_idx.lock().unwrap() = -1;
     let _ = state.broadcast_tx.send(());
-    esphome::do_hide_popup(&app);
+    // Direct hide via run_on_main_thread — do NOT call do_hide_popup here
+    // (that would emit 'do-hide' → JS calls invoke('close_popup') → infinite loop)
+    if let Some(w) = app.get_webview_window("popup") {
+        let _ = app.run_on_main_thread(move || {
+            let _ = w.hide();
+        });
+    }
     Ok(())
 }
 

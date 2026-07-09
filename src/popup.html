@@ -206,6 +206,12 @@
     startCountdown(seconds);
   });
 
+  // Rust calls this when HA toggle-off fires or timer expires
+  listen('do-hide', () => {
+    img.src = ''; // abort MJPEG stream before hiding
+    invoke('close_popup');
+  });
+
   document.getElementById('closeBtn').addEventListener('click', () => invoke('close_popup'));
 
   document.getElementById('extendBtn').addEventListener('click', () => {

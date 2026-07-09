@@ -357,9 +357,11 @@ async fn handle_message(
                         *state.active_camera_idx.lock().unwrap() = -1;
                         let _ = state.broadcast_tx.send(());
 
-                        // Cancel any running close timer
-                        let mut t = state.close_timer.lock().await;
-                        if let Some(h) = t.take() { h.abort(); }
+                        // Cancel any running close timer — release lock before emitting
+                        {
+                            let mut t = state.close_timer.lock().await;
+                            if let Some(h) = t.take() { h.abort(); }
+                        }
 
                         do_hide_popup(app);
                     }
@@ -422,8 +424,9 @@ pub fn do_show_camera(
 
 pub fn do_hide_popup(app: &tauri::AppHandle) {
     use tauri::Manager;
-    let Some(window) = app.get_webview_window("popup") else { return; };
-    let _ = app.run_on_main_thread(move || {
-        let _ = window.hide();
-    });
+    // Emit to popup JS — JS calls invoke('close_popup') which hides the window.
+    // This is the only path that reliably works from background tokio tasks.
+    if let Some(window) = app.get_webview_window("popup") {
+        let _ = window.emit("do-hide", ());
+    }
 }
