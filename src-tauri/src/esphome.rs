@@ -403,6 +403,11 @@ pub fn do_show_camera(
         return;
     };
 
+    let active_idx = config.cameras.iter().position(|c| c.entity_id == cam.entity_id).unwrap_or(0);
+    let cameras_json: Vec<serde_json::Value> = config.cameras.iter().enumerate()
+        .map(|(i, c)| serde_json::json!({"idx": i, "name": c.name}))
+        .collect();
+
     let _ = app.run_on_main_thread(move || {
         let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(width, height)));
         let _ = window.set_always_on_top(always_on_top);
@@ -421,6 +426,8 @@ pub fn do_show_camera(
             "cameraEntityId": entity_id,
             "timeout": timeout,
             "showBar": show_timer_bar,
+            "cameras": cameras_json,
+            "activeCameraIdx": active_idx,
         }));
     });
 }

@@ -288,6 +288,46 @@ async fn close_popup(state: tauri::State<'_, AppState>, app: tauri::AppHandle) -
 }
 
 #[tauri::command]
+async fn switch_camera(
+    idx: usize,
+    timeout: u32,
+    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    let config = state.config.lock().await.clone();
+    let cam = config.cameras.get(idx).ok_or_else(|| "invalid camera index".to_string())?;
+    let proxy_port = *state.proxy_port.lock().unwrap();
+
+    *state.active_camera_idx.lock().unwrap() = idx as i32;
+    let _ = state.broadcast_tx.send(());
+
+    start_close_timer(&app, timeout).await;
+
+    // Emit show-camera without repositioning — window is already placed
+    let url = format!("http://127.0.0.1:{}/api/camera_proxy_stream/{}", proxy_port, cam.entity_id);
+    let entity_id = cam.entity_id.clone();
+    let show_bar = config.show_timer_bar;
+    let cameras_json: Vec<serde_json::Value> = config.cameras.iter().enumerate()
+        .map(|(i, c)| serde_json::json!({"idx": i, "name": c.name}))
+        .collect();
+
+    if let Some(w) = app.get_webview_window("popup") {
+        let _ = app.run_on_main_thread(move || {
+            let _ = w.emit("show-camera", serde_json::json!({
+                "cameraUrl": url,
+                "cameraEntityId": entity_id,
+                "timeout": timeout,
+                "showBar": show_bar,
+                "cameras": cameras_json,
+                "activeCameraIdx": idx,
+            }));
+        });
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
 async fn extend_timer(
     seconds: i32,
     state: tauri::State<'_, AppState>,
@@ -353,6 +393,7 @@ fn main() {
             save_config,
             close_popup,
             extend_timer,
+            switch_camera,
         ])
         .run(tauri::generate_context!())
         .expect("tauri app error");

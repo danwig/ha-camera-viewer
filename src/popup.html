@@ -111,36 +111,64 @@
     transition: background 0.15s;
   }
   .btn:hover { background: #2d3348; }
+
+  #cameraPicker {
+    display: none;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 5px;
+    padding: 6px 10px;
+    background: #080b10;
+    border-top: 1px solid #1e2330;
+    flex-shrink: 0;
+  }
+  .cam-switch-btn {
+    background: #1e2330;
+    border: 1px solid #2d3348;
+    color: #94a3b8;
+    border-radius: 5px;
+    padding: 3px 9px;
+    font-size: 11px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+  .cam-switch-btn:hover { background: #2d3348; color: #e2e8f0; }
+  .cam-switch-btn.active { background: #1e3a5f; border-color: #2563eb; color: #93c5fd; cursor: default; }
 </style>
 </head>
 <body>
 
 <div id="titlebar" data-tauri-drag-region>
   <span class="title" id="cameraLabel" data-tauri-drag-region>HA Camera</span>
-  <button id="closeBtn" title="Close">✕</button>
+  <button id="closeBtn" title="Close">&#x2715;</button>
 </div>
 
 <div id="cameraWrap">
   <img id="cameraImg" alt=""/>
   <div id="errorMsg">
-    <span class="icon">📷</span>
-    <span id="errorText">Connecting to camera…</span>
+    <span class="icon">&#x1F4F7;</span>
+    <span id="errorText">Connecting to camera&hellip;</span>
   </div>
 </div>
 
 <div id="timerBar"><div id="timerFill"></div></div>
 
 <div id="controls">
-  <span id="timerLabel">–</span>
+  <span id="timerLabel">&ndash;</span>
   <div style="display:flex;gap:6px">
     <button class="btn" id="extendBtn">+30s</button>
     <button class="btn" id="noTimerBtn">Keep open</button>
   </div>
 </div>
 
+<div id="cameraPicker"></div>
+
 <script>
   let timerInterval = null;
   let remaining = 0;
+  let originalTimeout = 0;
+  let currentActiveIdx = -1;
 
   const img = document.getElementById('cameraImg');
   const errorMsg = document.getElementById('errorMsg');
@@ -149,6 +177,7 @@
   const timerBar = document.getElementById('timerBar');
   const timerFill = document.getElementById('timerFill');
   const cameraLabel = document.getElementById('cameraLabel');
+  const cameraPicker = document.getElementById('cameraPicker');
 
   function startCountdown(seconds) {
     clearInterval(timerInterval);
@@ -180,13 +209,32 @@
     cameraLabel.textContent = (entityId || '').replace('camera.', '').replace(/_/g, ' ');
     errorMsg.style.display = 'none';
     img.style.display = 'block';
-    img.src = ''; // abort any existing MJPEG stream
-    img.onerror = () => { img.style.display='none'; errorMsg.style.display='flex'; errorText.textContent='Camera unavailable'; };
-    img.onload = () => { errorMsg.style.display='none'; img.style.display='block'; };
+    img.src = '';
+    img.onerror = () => { img.style.display = 'none'; errorMsg.style.display = 'flex'; errorText.textContent = 'Camera unavailable'; };
+    img.onload = () => { errorMsg.style.display = 'none'; img.style.display = 'block'; };
     img.src = url + '?t=' + Date.now();
   }
 
-  // Tauri event listeners
+  function renderCameraPicker(cameras, activeIdx) {
+    if (!cameras || cameras.length <= 1) {
+      cameraPicker.style.display = 'none';
+      return;
+    }
+    cameraPicker.style.display = 'flex';
+    cameraPicker.innerHTML = '';
+    cameras.forEach(cam => {
+      const btn = document.createElement('button');
+      btn.className = 'cam-switch-btn' + (cam.idx === activeIdx ? ' active' : '');
+      btn.textContent = cam.name;
+      btn.addEventListener('click', () => {
+        if (cam.idx !== currentActiveIdx) {
+          invoke('switch_camera', { idx: cam.idx, timeout: originalTimeout });
+        }
+      });
+      cameraPicker.appendChild(btn);
+    });
+  }
+
   if (!window.__TAURI__) {
     document.getElementById('errorText').textContent = 'Tauri API not available';
     document.getElementById('errorMsg').style.display = 'flex';
@@ -196,19 +244,21 @@
   const { listen } = window.__TAURI__.event;
 
   listen('show-camera', ({ payload }) => {
-    const { cameraUrl, cameraEntityId, timeout, showBar } = payload;
+    const { cameraUrl, cameraEntityId, timeout, showBar, cameras, activeCameraIdx } = payload;
     loadCamera(cameraUrl, cameraEntityId);
     timerBar.style.display = showBar ? 'block' : 'none';
     startCountdown(timeout);
+    originalTimeout = timeout;
+    currentActiveIdx = activeCameraIdx ?? 0;
+    renderCameraPicker(cameras, activeCameraIdx);
   });
 
   listen('timer-extended', ({ payload: seconds }) => {
     startCountdown(seconds);
   });
 
-  // Rust calls this when HA toggle-off fires or timer expires
   listen('do-hide', () => {
-    img.src = ''; // abort MJPEG stream before hiding
+    img.src = '';
     invoke('close_popup');
   });
 
