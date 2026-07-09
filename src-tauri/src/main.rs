@@ -68,7 +68,7 @@ fn build_tray(app: &tauri::App, cameras: &[config::Camera]) -> tauri::Result<()>
                                 let timeout = config.manual_timeout;
                                 *state.active_camera_idx.lock().unwrap() = idx as i32;
                                 let _ = state.broadcast_tx.send(());
-                                esphome::do_show_camera(&app, &cam, &config, proxy_port).await;
+                                esphome::do_show_camera(&app, &cam, &config, proxy_port);
                                 start_close_timer(&app, timeout).await;
                             }
                         });
@@ -187,6 +187,7 @@ async fn restart_services(app: &tauri::AppHandle, state: &AppState) {
             config: state.config.clone(),
             active_camera_idx: state.active_camera_idx.clone(),
             broadcast_tx: state.broadcast_tx.clone(),
+            close_timer: state.close_timer.clone(),
         };
         let app_clone = app.clone();
         let port = config.esp_port;
@@ -251,12 +252,16 @@ async fn save_config(
 
     rebuild_tray_menu(&app, &new_config.cameras);
 
-    // Re-create popup with updated size/settings if it exists
+    // Update popup size/settings if it exists
     if let Some(w) = app.get_webview_window("popup") {
-        let _ = w.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(
-            new_config.width, new_config.height,
-        )));
-        let _ = w.set_always_on_top(new_config.always_on_top);
+        let w2 = w.clone();
+        let width = new_config.width;
+        let height = new_config.height;
+        let always_on_top = new_config.always_on_top;
+        let _ = app.run_on_main_thread(move || {
+            let _ = w2.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(width, height)));
+            let _ = w2.set_always_on_top(always_on_top);
+        });
     }
 
     restart_services(&app, &state).await;

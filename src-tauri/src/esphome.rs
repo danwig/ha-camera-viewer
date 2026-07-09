@@ -168,6 +168,8 @@ pub struct EspHomeState {
     pub config: Arc<Mutex<Config>>,
     pub active_camera_idx: Arc<std::sync::Mutex<i32>>,
     pub broadcast_tx: broadcast::Sender<()>,
+    // Shared with AppState so tray-click timers and HA-triggered timers stay in sync
+    pub close_timer: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
 }
 
 pub async fn run_server(
@@ -229,7 +231,6 @@ async fn handle_connection(
                 }
             }
             Ok(_) = rx.recv() => {
-                // Broadcast signal: push current states to this client
                 send_states(&mut stream, &state).await;
             }
         }
@@ -337,13 +338,29 @@ async fn handle_message(
                         let cam = cameras[idx].clone();
                         let config = state.config.lock().await.clone();
                         let port = *proxy_port.lock().unwrap();
-                        let app = app.clone();
-                        tokio::spawn(async move {
-                            do_show_camera(&app, &cam, &config, port).await;
-                        });
+                        let timeout = config.timeout;
+                        let close_timer = state.close_timer.clone();
+                        let app_clone = app.clone();
+
+                        do_show_camera(app, &cam, &config, port);
+
+                        // Start (or replace) the auto-close timer
+                        let mut t = close_timer.lock().await;
+                        if let Some(h) = t.take() { h.abort(); }
+                        if timeout > 0 {
+                            *t = Some(tokio::spawn(async move {
+                                tokio::time::sleep(tokio::time::Duration::from_secs(timeout as u64)).await;
+                                do_hide_popup(&app_clone);
+                            }));
+                        }
                     } else {
                         *state.active_camera_idx.lock().unwrap() = -1;
                         let _ = state.broadcast_tx.send(());
+
+                        // Cancel any running close timer
+                        let mut t = state.close_timer.lock().await;
+                        if let Some(h) = t.take() { h.abort(); }
+
                         do_hide_popup(app);
                     }
                 }
@@ -355,60 +372,58 @@ async fn handle_message(
     true
 }
 
-pub async fn do_show_camera(
+// ---- Window helpers — must dispatch to main thread ----
+
+pub fn do_show_camera(
     app: &tauri::AppHandle,
     cam: &Camera,
     config: &Config,
     proxy_port: u16,
 ) {
-    use tauri::{Manager, WebviewWindowBuilder, WebviewUrl};
+    use tauri::Manager;
 
     let url = format!(
         "http://127.0.0.1:{}/api/camera_proxy_stream/{}",
         proxy_port, cam.entity_id
     );
+    let width = config.width;
+    let height = config.height;
+    let always_on_top = config.always_on_top;
+    let timeout = config.timeout;
+    let show_timer_bar = config.show_timer_bar;
+    let entity_id = cam.entity_id.clone();
 
-    let window = if let Some(w) = app.get_webview_window("popup") {
-        let _ = w.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(
-            config.width, config.height,
-        )));
-        let _ = w.set_always_on_top(config.always_on_top);
-        w
-    } else {
-        match WebviewWindowBuilder::new(app, "popup", WebviewUrl::App("popup.html".into()))
-            .decorations(false)
-            .always_on_top(config.always_on_top)
-            .skip_taskbar(true)
-            .inner_size(config.width as f64, config.height as f64)
-            .visible(false)
-            .build()
-        {
-            Ok(w) => w,
-            Err(e) => { eprintln!("popup window error: {}", e); return; }
-        }
+    let Some(window) = app.get_webview_window("popup") else {
+        eprintln!("[popup] window not found");
+        return;
     };
 
-    // Position bottom-right of primary monitor
-    if let Ok(Some(monitor)) = window.primary_monitor() {
-        let wa = monitor.work_area();
-        let x = wa.position.x + wa.size.width as i32 - config.width as i32 - 16;
-        let y = wa.position.y + wa.size.height as i32 - config.height as i32 - 16;
-        let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(x, y)));
-    }
+    let _ = app.run_on_main_thread(move || {
+        let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(width, height)));
+        let _ = window.set_always_on_top(always_on_top);
 
-    let _ = window.show();
-    let _ = window.set_focus();
-    let _ = window.emit("show-camera", serde_json::json!({
-        "cameraUrl": url,
-        "cameraEntityId": cam.entity_id,
-        "timeout": config.timeout,
-        "showBar": config.show_timer_bar,
-    }));
+        if let Ok(Some(monitor)) = window.primary_monitor() {
+            let wa = monitor.work_area();
+            let x = wa.position.x + wa.size.width as i32 - width as i32 - 16;
+            let y = wa.position.y + wa.size.height as i32 - height as i32 - 16;
+            let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(x, y)));
+        }
+
+        let _ = window.show();
+        let _ = window.set_focus();
+        let _ = window.emit("show-camera", serde_json::json!({
+            "cameraUrl": url,
+            "cameraEntityId": entity_id,
+            "timeout": timeout,
+            "showBar": show_timer_bar,
+        }));
+    });
 }
 
 pub fn do_hide_popup(app: &tauri::AppHandle) {
     use tauri::Manager;
-    if let Some(w) = app.get_webview_window("popup") {
-        let _ = w.hide();
-    }
+    let Some(window) = app.get_webview_window("popup") else { return; };
+    let _ = app.run_on_main_thread(move || {
+        let _ = window.hide();
+    });
 }
