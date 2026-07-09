@@ -68,7 +68,7 @@ fn build_tray(app: &tauri::App, cameras: &[config::Camera]) -> tauri::Result<()>
                                 let timeout = config.manual_timeout;
                                 *state.active_camera_idx.lock().unwrap() = idx as i32;
                                 let _ = state.broadcast_tx.send(());
-                                esphome::do_show_camera(&app, &cam, &config, proxy_port);
+                                esphome::do_show_camera(&app, &cam, &config, proxy_port, config.manual_timeout);
                                 start_close_timer(&app, timeout).await;
                             }
                         });

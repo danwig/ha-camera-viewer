@@ -342,7 +342,7 @@ async fn handle_message(
                         let close_timer = state.close_timer.clone();
                         let app_clone = app.clone();
 
-                        do_show_camera(app, &cam, &config, port);
+                        do_show_camera(app, &cam, &config, port, config.timeout);
 
                         // Start (or replace) the auto-close timer
                         let mut t = close_timer.lock().await;
@@ -381,6 +381,7 @@ pub fn do_show_camera(
     cam: &Camera,
     config: &Config,
     proxy_port: u16,
+    display_timeout: u32,  // what to show in the JS countdown (may differ from config.timeout)
 ) {
     use tauri::Manager;
 
@@ -391,7 +392,7 @@ pub fn do_show_camera(
     let width = config.width;
     let height = config.height;
     let always_on_top = config.always_on_top;
-    let timeout = config.timeout;
+    let timeout = display_timeout;
     let show_timer_bar = config.show_timer_bar;
     let entity_id = cam.entity_id.clone();
 
@@ -424,9 +425,10 @@ pub fn do_show_camera(
 
 pub fn do_hide_popup(app: &tauri::AppHandle) {
     use tauri::Manager;
-    // Emit to popup JS — JS calls invoke('close_popup') which hides the window.
-    // This is the only path that reliably works from background tokio tasks.
-    if let Some(window) = app.get_webview_window("popup") {
+    // window.emit() in Tauri 2 requires the main thread (WebView2 is STA on Windows).
+    // Schedule the emit there so the popup JS receives 'do-hide' and calls close_popup.
+    let Some(window) = app.get_webview_window("popup") else { return; };
+    let _ = app.run_on_main_thread(move || {
         let _ = window.emit("do-hide", ());
-    }
+    });
 }
