@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--
+  Paste this into SignPath:
+  Projects → ha-camera-viewer → Artifact Configurations → Add
+  Name it: windows-executables
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <pe-binary path="setup.exe">
+      <authenticode-sign/>
+    </pe-binary>
+    <pe-binary path="portable.exe">
+      <authenticode-sign/>
+    </pe-binary>
+  </zip-file>
+</artifact-configuration>

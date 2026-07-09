@@ -1,0 +1,76 @@
+name: Build, Sign & Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v1.0.1)'
+        required: true
+
+permissions:
+  id-token: write   # required by SignPath to verify the build came from GitHub Actions
+  contents: write   # required to create/update GitHub releases
+
+jobs:
+  build-sign-release:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Node dependencies
+        run: npm install
+
+      - name: Build Tauri app
+        run: npm run build
+
+      - name: Bundle artifacts for signing
+        shell: pwsh
+        run: |
+          $installer = (Get-ChildItem "src-tauri/target/release/bundle/nsis" -Filter "*.exe").FullName
+          $portable  = "src-tauri/target/release/ha-camera-viewer.exe"
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          Copy-Item $installer "artifacts/setup.exe"
+          Copy-Item $portable  "artifacts/portable.exe"
+          Compress-Archive -Path "artifacts/setup.exe","artifacts/portable.exe" -DestinationPath to-sign.zip
+
+      - name: Upload unsigned bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: to-sign
+          path: to-sign.zip
+
+      - name: Sign via SignPath
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
+          organization-id: '${{ vars.SIGNPATH_ORG_ID }}'
+          project-slug: ha-camera-viewer
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: windows-executables
+          github-artifact-id: to-sign
+          wait-for-completion: true
+          output-artifact-directory: signed
+
+      - name: Extract and rename signed files
+        shell: pwsh
+        run: |
+          $tag = if ("${{ github.ref_name }}" -ne "") { "${{ github.ref_name }}" } else { "${{ inputs.tag }}" }
+          $ver = $tag.TrimStart('v')
+          Expand-Archive signed/to-sign.zip -DestinationPath signed/out
+          Rename-Item "signed/out/setup.exe"    "HA Camera Viewer_${ver}_x64-setup.exe"
+          Rename-Item "signed/out/portable.exe" "HA Camera Viewer_${ver}_portable.exe"
+
+      - name: Upload signed files to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: '${{ github.ref_name || inputs.tag }}'
+          files: signed/out/*.exe
