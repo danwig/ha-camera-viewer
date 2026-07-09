@@ -133,7 +133,8 @@ fn decode_frames(buf: &[u8]) -> (usize, Vec<(u32, Vec<u8>)>) {
 fn parse_switch_command(payload: &[u8]) -> Option<(u32, bool)> {
     let mut pos = 0;
     let mut key: Option<u32> = None;
-    let mut state: Option<bool> = None;
+    // proto3: bool default is false — if field 2 is absent, state is false (OFF command)
+    let mut state = false;
 
     while pos < payload.len() {
         let (tag, p) = decode_varint(payload, pos)?;
@@ -150,7 +151,7 @@ fn parse_switch_command(payload: &[u8]) -> Option<(u32, bool)> {
             (2, 0) => {
                 let (v, p) = decode_varint(payload, pos)?;
                 pos = p;
-                state = Some(v != 0);
+                state = v != 0;
             }
             (_, 0) => { let (_, p) = decode_varint(payload, pos)?; pos = p; }
             (_, 2) => { let (len, p) = decode_varint(payload, pos)?; pos = p + len as usize; }
@@ -158,7 +159,8 @@ fn parse_switch_command(payload: &[u8]) -> Option<(u32, bool)> {
             _ => return None,
         }
     }
-    Some((key?, state?))
+    // Only key is required; state defaults to false if absent
+    key.map(|k| (k, state))
 }
 
 // ---- Server ----
