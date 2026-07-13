@@ -1,4 +1,4 @@
-name: Build, Sign & Release
+name: Build & Release
 
 on:
   push:
@@ -10,11 +10,10 @@ on:
         required: true
 
 permissions:
-  id-token: write   # required by SignPath to verify the build came from GitHub Actions
-  contents: write   # required to create/update GitHub releases
+  contents: write
 
 jobs:
-  build-sign-release:
+  build-release:
     runs-on: windows-latest
 
     steps:
@@ -32,45 +31,19 @@ jobs:
       - name: Build Tauri app
         run: npm run build
 
-      - name: Bundle artifacts for signing
-        shell: pwsh
-        run: |
-          $installer = (Get-ChildItem "src-tauri/target/release/bundle/nsis" -Filter "*.exe").FullName
-          $portable  = "src-tauri/target/release/ha-camera-viewer.exe"
-          New-Item -ItemType Directory -Force artifacts | Out-Null
-          Copy-Item $installer "artifacts/setup.exe"
-          Copy-Item $portable  "artifacts/portable.exe"
-          Compress-Archive -Path "artifacts/setup.exe","artifacts/portable.exe" -DestinationPath to-sign.zip
-
-      - name: Upload unsigned bundle
-        uses: actions/upload-artifact@v4
-        with:
-          name: to-sign
-          path: to-sign.zip
-
-      - name: Sign via SignPath
-        uses: signpath/github-action-submit-signing-request@v1
-        with:
-          api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
-          organization-id: '${{ vars.SIGNPATH_ORG_ID }}'
-          project-slug: ha-camera-viewer
-          signing-policy-slug: release-signing
-          artifact-configuration-slug: windows-executables
-          github-artifact-id: to-sign
-          wait-for-completion: true
-          output-artifact-directory: signed
-
-      - name: Extract and rename signed files
+      - name: Rename release files
         shell: pwsh
         run: |
           $tag = if ("${{ github.ref_name }}" -ne "") { "${{ github.ref_name }}" } else { "${{ inputs.tag }}" }
           $ver = $tag.TrimStart('v')
-          Expand-Archive signed/to-sign.zip -DestinationPath signed/out
-          Rename-Item "signed/out/setup.exe"    "HA Camera Viewer_${ver}_x64-setup.exe"
-          Rename-Item "signed/out/portable.exe" "HA Camera Viewer_${ver}_portable.exe"
+          $installer = (Get-ChildItem "src-tauri/target/release/bundle/nsis" -Filter "*.exe").FullName
+          $portable  = "src-tauri/target/release/ha-camera-viewer.exe"
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item $installer "dist/HA Camera Viewer_${ver}_x64-setup.exe"
+          Copy-Item $portable  "dist/HA Camera Viewer_${ver}_portable.exe"
 
-      - name: Upload signed files to GitHub Release
+      - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: '${{ github.ref_name || inputs.tag }}'
-          files: signed/out/*.exe
+          files: dist/*.exe
